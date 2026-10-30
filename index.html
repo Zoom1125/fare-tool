@@ -42,4 +42,342 @@
     .price-box.highlight { border-color: var(--accent); background: #fffbeb; }
     .price-box .tag { font-size: 12px; color: var(--text-sub); margin-bottom: 4px; }
     .price-box .val { font-size: 18px; font-weight: 800; color: var(--primary); }
-    .price-box .val.accent {
+    .price-box .val.accent { color: var(--accent); }
+    
+    .result-list { margin-top: 16px; max-height: 440px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+    .match-item { border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; font-size: 14px; background: white; border-left: 4px solid var(--primary); }
+    .match-tag { font-size: 11px; font-weight: 700; color: var(--accent); margin-bottom: 2px; }
+    .desc-note { font-size: 12px; color: var(--text-sub); margin-top: 8px; line-height: 1.5; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <h1>票價查詢核對工具</h1>
+    <p>整合台灣高鐵、台灣鐵路與國內航空官方票價與核銷金額反查配對</p>
+  </header>
+
+  <div class="main-grid">
+    <!-- 左側：票價正向查詢 -->
+    <div class="card">
+      <div class="card-title">🔍 票價查詢</div>
+      
+      <div class="tabs">
+        <button class="tab-btn active" onclick="switchLeftTab('thsr')">台灣高鐵</button>
+        <button class="tab-btn" onclick="switchLeftTab('tra')">台灣鐵路</button>
+        <button class="tab-btn" onclick="switchLeftTab('flight')">國內航空</button>
+      </div>
+
+      <!-- 起訖站選擇 -->
+      <div class="form-group" id="routeSelectGroup">
+        <label id="routeLabel">起訖站點</label>
+        <div class="station-selects">
+          <select id="startSelect" onchange="renderLeftPrice()"></select>
+          <span>➔</span>
+          <select id="endSelect" onchange="renderLeftPrice()"></select>
+        </div>
+      </div>
+
+      <!-- 票價結果呈現區 -->
+      <div class="price-display" id="priceDisplayContainer"></div>
+      <div class="desc-note" id="noticeText"></div>
+    </div>
+
+    <!-- 右側：核銷金額反查 -->
+    <div class="card">
+      <div class="card-title">🎯 核銷金額反查</div>
+      <div class="form-group">
+        <label>選擇比對之交通工具</label>
+        <select id="reverseModeSelect">
+          <option value="thsr">台灣高鐵</option>
+          <option value="tra">台灣鐵路</option>
+          <option value="flight">國內航空</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>輸入核銷金額 (NT$)</label>
+        <input type="number" id="inputAmount" placeholder="例如：1800、4326、975" />
+      </div>
+      <button class="btn-action" onclick="runReverseMatch()">開始反查</button>
+
+      <div class="result-list" id="matchResults">
+        <div style="text-align: center; color: var(--text-sub); font-size: 13px; margin-top: 20px;">請輸入金額並點擊反查</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let currentLeftTab = 'thsr';
+
+/* ================= 1. 高鐵資料庫 ================= */
+const thsrStations = ["南港", "台北", "板橋", "桃園", "新竹", "苗栗", "台中", "彰化", "雲林", "嘉義", "台南", "左營"];
+const thsrStd = [
+  [0, 40, 70, 200, 330, 480, 750, 870, 970, 1120, 1390, 1530],
+  [40, 0, 40, 160, 290, 430, 700, 820, 930, 1080, 1350, 1490],
+  [70, 40, 0, 130, 260, 400, 670, 790, 900, 1050, 1320, 1460],
+  [200, 160, 130, 0, 130, 280, 540, 670, 780, 920, 1190, 1330],
+  [330, 290, 260, 130, 0, 140, 410, 540, 640, 790, 1060, 1200],
+  [480, 430, 400, 280, 140, 0, 270, 390, 500, 640, 920, 1060],
+  [750, 700, 670, 540, 410, 270, 0, 130, 230, 380, 650, 790],
+  [870, 820, 790, 670, 540, 390, 130, 0, 110, 250, 530, 670],
+  [970, 930, 900, 780, 640, 500, 230, 110, 0, 150, 420, 560],
+  [1120, 1080, 1050, 920, 790, 640, 380, 250, 150, 0, 280, 410],
+  [1390, 1350, 1320, 1190, 1060, 920, 650, 530, 420, 280, 0, 140],
+  [1530, 1490, 1460, 1330, 1200, 1060, 790, 670, 560, 410, 140, 0]
+];
+
+function getThsrFares(i, j) {
+  const std = thsrStd[i][j];
+  if (std === 0) return [];
+  const free = (std <= 40) ? 35 : Math.round((std * 0.97) / 5) * 5;
+  const list = [
+    { type: "標準車廂(對號)", price: std },
+    { type: "自由座", price: free },
+    { type: "半價優待", price: Math.floor(std / 2) }
+  ];
+  if (!((i === 0 && j <= 2) || (i === 1 && j <= 2) || (i === 2 && j <= 1))) {
+    list.push({ type: "商務車廂", price: std + Math.round(std * 0.65) });
+  }
+  return list;
+}
+
+/* ================= 2. 臺鐵資料庫 ================= */
+const traStations = ["基隆", "台北", "板橋", "桃園", "中壢", "新竹", "苗栗", "台中", "彰化", "員林", "斗六", "嘉義", "台南", "新左營", "高雄", "屏東", "宜蘭", "羅東", "花蓮", "台東"];
+const traDistances = [0, 28, 36, 57, 67, 106, 154, 193, 211, 226, 269, 296, 358, 400, 407, 428, 93, 103, 187, 348];
+
+function getTraFares(i, j) {
+  if (i === j) return [];
+  const dist = Math.abs(traDistances[i] - traDistances[j]);
+  let tze = Math.max(23, Math.round(dist * 2.27));
+  let chu = Math.max(18, Math.round(dist * 1.75));
+  let local = Math.max(15, Math.round(dist * 1.46));
+  
+  if ((traStations[i]==="台北" && traStations[j]==="台中") || (traStations[j]==="台北" && traStations[i]==="台中")) tze = 375;
+  if ((traStations[i]==="台北" && traStations[j]==="斗六") || (traStations[j]==="台北" && traStations[i]==="斗六")) tze = 549;
+  if ((traStations[i]==="台北" && traStations[j]==="花蓮") || (traStations[j]==="台北" && traStations[i]==="花蓮")) tze = 440;
+  if ((traStations[i]==="台北" && traStations[j]==="台東") || (traStations[j]==="台北" && traStations[i]==="台東")) tze = 783;
+
+  return [
+    { type: "自強號(3000/普悠瑪)", price: tze },
+    { type: "莒光號", price: chu },
+    { type: "區間車", price: local }
+  ];
+}
+
+/* ================= 3. 航空資料庫 (立榮/華信主要航線) ================= */
+const flightRoutes = [
+  { from: "松山", to: "金門", air: "立榮", go: 2458, back: 2341 },
+  { from: "松山", to: "金門", air: "華信", go: 2459, back: 2342 },
+  { from: "松山", to: "澎湖", air: "立榮", go: 2137, back: 2035 },
+  { from: "松山", to: "澎湖", air: "華信", go: 2234, back: 2128 },
+  { from: "松山", to: "台東", air: "華信", go: 2441, back: 2441 },
+  { from: "松山", to: "台東", air: "立榮", go: 2370, back: 2370 },
+  { from: "台中", to: "金門", air: "立榮", go: 2135, back: 2033 },
+  { from: "台中", to: "金門", air: "華信", go: 2286, back: 2177 },
+  { from: "台中", to: "澎湖", air: "立榮", go: 1705, back: 1624 },
+  { from: "台中", to: "花蓮", air: "華信", go: 2472, back: 2472 },
+  { from: "高雄", to: "金門", air: "立榮", go: 2284, back: 2175 },
+  { from: "高雄", to: "金門", air: "華信", go: 2359, back: 2247 },
+  { from: "高雄", to: "澎湖", air: "立榮", go: 1714, back: 1632 }
+];
+
+/* ================= 介面切換與初始化 ================= */
+function switchLeftTab(tab) {
+  currentLeftTab = tab;
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+  
+  const start = document.getElementById("startSelect");
+  const end = document.getElementById("endSelect");
+  start.innerHTML = "";
+  end.innerHTML = "";
+
+  if (tab === 'thsr') {
+    thsrStations.forEach((s, idx) => {
+      start.add(new Option(s, idx));
+      end.add(new Option(s, idx));
+    });
+    start.value = 8; end.value = 1; // 預設雲林 -> 台北
+    document.getElementById("noticeText").innerText = "註：高鐵半價優待為對號座之半價；南港—台北、台北—板橋等無發售商務座。";
+  } else if (tab === 'tra') {
+    traStations.forEach((s, idx) => {
+      start.add(new Option(s, idx));
+      end.add(new Option(s, idx));
+    });
+    start.value = 10; end.value = 1; // 預設斗六 -> 台北
+    document.getElementById("noticeText").innerText = "註：臺鐵票價含新自強(3000)、普悠瑪全票票價，實際金額以臺鐵局最新公告為準。";
+  } else if (tab === 'flight') {
+    const flightAirports = ["松山", "金門", "澎湖", "台東", "花蓮", "台中", "高雄"];
+    flightAirports.forEach(a => {
+      start.add(new Option(a, a));
+      end.add(new Option(a, a));
+    });
+    start.value = "松山"; end.value = "金門";
+    document.getElementById("noticeText").innerText = "註：航空票價依立榮/華信公告全額票價計算，離島飛本島依法免收 5% 營業稅。";
+  }
+  renderLeftPrice();
+}
+
+function renderLeftPrice() {
+  const container = document.getElementById("priceDisplayContainer");
+  container.innerHTML = "";
+
+  if (currentLeftTab === 'thsr') {
+    const s = parseInt(document.getElementById("startSelect").value);
+    const e = parseInt(document.getElementById("endSelect").value);
+    const fares = getThsrFares(s, e);
+    if (fares.length === 0) {
+      container.innerHTML = `<div style="grid-column: span 2; text-align: center; color: var(--text-sub);">起訖站相同</div>`;
+      return;
+    }
+    fares.forEach(f => {
+      container.innerHTML += `
+        <div class="price-box ${f.type.includes('標準') ? 'highlight' : ''}">
+          <div class="tag">${f.type}</div>
+          <div class="val ${f.type.includes('標準') ? 'accent' : ''}">NT$ ${f.price.toLocaleString()}</div>
+        </div>
+      `;
+    });
+  } else if (currentLeftTab === 'tra') {
+    const s = parseInt(document.getElementById("startSelect").value);
+    const e = parseInt(document.getElementById("endSelect").value);
+    const fares = getTraFares(s, e);
+    if (fares.length === 0) {
+      container.innerHTML = `<div style="grid-column: span 2; text-align: center; color: var(--text-sub);">起訖站相同</div>`;
+      return;
+    }
+    fares.forEach(f => {
+      container.innerHTML += `
+        <div class="price-box ${f.type.includes('自強') ? 'highlight' : ''}">
+          <div class="tag">${f.type}</div>
+          <div class="val ${f.type.includes('自強') ? 'accent' : ''}">NT$ ${f.price.toLocaleString()}</div>
+        </div>
+      `;
+    });
+  } else if (currentLeftTab === 'flight') {
+    const s = document.getElementById("startSelect").value;
+    const e = document.getElementById("endSelect").value;
+    const match = flightRoutes.filter(r => (r.from === s && r.to === e) || (r.from === e && r.to === s));
+    if (match.length === 0) {
+      container.innerHTML = `<div style="grid-column: span 2; text-align: center; color: var(--text-sub);">查無此直飛定期航線</div>`;
+      return;
+    }
+    match.forEach(r => {
+      const price = (r.from === s) ? r.go : r.back;
+      container.innerHTML += `
+        <div class="price-box highlight">
+          <div class="tag">${r.air}航空 (${s} ➔ ${e})</div>
+          <div class="val accent">NT$ ${price.toLocaleString()}</div>
+        </div>
+      `;
+    });
+  }
+}
+
+/* ================= 右側：反查配對核心 ================= */
+function runReverseMatch() {
+  const mode = document.getElementById("reverseModeSelect").value;
+  const target = parseInt(document.getElementById("inputAmount").value);
+  const resultsDiv = document.getElementById("matchResults");
+  resultsDiv.innerHTML = "";
+
+  if (isNaN(target) || target <= 0) {
+    resultsDiv.innerHTML = `<div style="text-align: center; color: red; font-size: 13px;">請輸入有效金額</div>`;
+    return;
+  }
+
+  let matches = [];
+
+  if (mode === 'thsr') {
+    for (let i = 0; i < thsrStations.length; i++) {
+      for (let j = 0; j < thsrStations.length; j++) {
+        getThsrFares(i, j).forEach(f => {
+          if (f.price === target) matches.push({ type: "高鐵單程", text: `${thsrStations[i]} ➔ ${thsrStations[j]}（${f.type}）`, amount: f.price });
+        });
+      }
+    }
+    for (let i = 0; i < thsrStations.length; i++) {
+      for (let j = i + 1; j < thsrStations.length; j++) {
+        getThsrFares(i, j).forEach(f1 => {
+          getThsrFares(j, i).forEach(f2 => {
+            if (f1.price + f2.price === target) {
+              matches.push({ type: "高鐵來回", text: `${thsrStations[i]} ⇄ ${thsrStations[j]}（去 ${f1.type} + 回 ${f2.type}）`, amount: target });
+            }
+          });
+        });
+      }
+    }
+    for (let b = 0; b < thsrStations.length; b++) {
+      for (let a = 0; a < thsrStations.length; a++) {
+        if (a === b) continue;
+        for (let c = 0; c < thsrStations.length; c++) {
+          if (c === b || c === a) continue;
+          getThsrFares(a, b).forEach(f1 => {
+            getThsrFares(b, c).forEach(f2 => {
+              if (f1.price + f2.price === target) {
+                matches.push({ type: "高鐵轉折組合", text: `去：${thsrStations[a]}➔${thsrStations[b]}(${f1.type}) ＋ 回：${thsrStations[b]}➔${thsrStations[c]}(${f2.type})`, amount: target });
+              }
+            });
+          });
+        }
+      }
+    }
+  } else if (mode === 'tra') {
+    for (let i = 0; i < traStations.length; i++) {
+      for (let j = 0; j < traStations.length; j++) {
+        if (i === j) continue;
+        getTraFares(i, j).forEach(f => {
+          if (f.price === target) matches.push({ type: "臺鐵單程", text: `${traStations[i]} ➔ ${traStations[j]}（${f.type}）`, amount: f.price });
+        });
+      }
+    }
+    for (let i = 0; i < traStations.length; i++) {
+      for (let j = i + 1; j < traStations.length; j++) {
+        getTraFares(i, j).forEach(f1 => {
+          getTraFares(j, i).forEach(f2 => {
+            if (f1.price + f2.price === target) {
+              matches.push({ type: "臺鐵來回", text: `${traStations[i]} ⇄ ${traStations[j]}（去 ${f1.type} + 回 ${f2.type}）`, amount: target });
+            }
+          });
+        });
+      }
+    }
+  } else if (mode === 'flight') {
+    flightRoutes.forEach(r => {
+      if (r.go === target) matches.push({ type: "航空單程", text: `${r.air}：${r.from} ➔ ${r.to}`, amount: r.go });
+      if (r.back === target) matches.push({ type: "航空單程(免稅)", text: `${r.air}：${r.to} ➔ ${r.from}`, amount: r.back });
+    });
+    flightRoutes.forEach(r1 => {
+      flightRoutes.forEach(r2 => {
+        if (r1.from === r2.from && r1.to === r2.to) {
+          if (r1.go + r2.back === target) {
+            matches.push({ type: "航空來回組合", text: `去：${r1.air}(${r1.from}➔${r1.to} NT$${r1.go}) ＋ 回：${r2.air}(${r2.to}➔${r2.from} NT$${r2.back})`, amount: target });
+          }
+        }
+      });
+    });
+  }
+
+  if (matches.length === 0) {
+    resultsDiv.innerHTML = `<div style="text-align: center; color: var(--text-sub); font-size: 13px; margin-top: 20px;">未找到剛好為 NT$ ${target} 的組合，請確認金額是否正確。</div>`;
+    return;
+  }
+
+  matches.forEach(m => {
+    const item = document.createElement("div");
+    item.className = "match-item";
+    item.innerHTML = `
+      <div class="match-tag">【${m.type}】NT$ ${m.amount}</div>
+      <div>${m.text}</div>
+    `;
+    resultsDiv.appendChild(item);
+  });
+}
+
+// 預設載入高鐵
+window.onload = () => switchLeftTab('thsr');
+</script>
+</body>
+</html>
