@@ -8,6 +8,7 @@
     :root {
       --primary: #1e3a8a;
       --accent: #d97706;
+      --limit-red: #dc2626;
       --bg: #f8fafc;
       --card-bg: #ffffff;
       --line: #e2e8f0;
@@ -37,17 +38,32 @@
     .btn-action { width: 100%; background: var(--primary); color: white; border: none; padding: 12px; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; transition: opacity 0.2s; }
     .btn-action:hover { opacity: 0.9; }
     
-    .price-display { margin-top: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .price-box { border: 1px solid var(--line); border-radius: 8px; padding: 12px; text-align: center; background: #fdfdfd; }
-    .price-box.highlight { border-color: var(--accent); background: #fffbeb; }
-    .price-box .tag { font-size: 12px; color: var(--text-sub); margin-bottom: 4px; }
-    .price-box .val { font-size: 18px; font-weight: 800; color: var(--primary); }
-    .price-box .val.accent { color: var(--accent); }
+    .price-display { margin-top: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .price-box { border: 1px solid var(--line); border-radius: 8px; padding: 14px 10px; text-align: center; background: #ffffff; position: relative; }
+    .price-box.highlight { border-color: var(--limit-red); background: #fffcfc; box-shadow: 0 0 0 1px var(--limit-red); }
+    
+    .badge-limit { 
+      position: absolute; 
+      top: -10px; 
+      right: 10px; 
+      background: var(--limit-red); 
+      color: white; 
+      font-size: 11px; 
+      font-weight: 700; 
+      padding: 2px 8px; 
+      border-radius: 12px; 
+      box-shadow: 0 2px 4px rgba(220,38,38,0.25);
+    }
+
+    .price-box .tag { font-size: 13px; font-weight: 600; color: var(--text-sub); margin-bottom: 6px; }
+    .price-box .val { font-size: 20px; font-weight: 800; color: var(--primary); margin-bottom: 4px; }
+    .price-box .val.accent { color: var(--limit-red); }
+    .price-box .round-val { font-size: 12px; color: var(--text-sub); font-weight: 600; background: #f1f5f9; padding: 3px 8px; border-radius: 4px; display: inline-block; margin-top: 4px; }
     
     .result-list { margin-top: 16px; max-height: 440px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
     .match-item { border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; font-size: 14px; background: white; border-left: 4px solid var(--primary); }
     .match-tag { font-size: 11px; font-weight: 700; color: var(--accent); margin-bottom: 2px; }
-    .desc-note { font-size: 12px; color: var(--text-sub); margin-top: 8px; line-height: 1.5; }
+    .desc-note { font-size: 12px; color: var(--text-sub); margin-top: 10px; line-height: 1.5; }
   </style>
 </head>
 <body>
@@ -64,9 +80,9 @@
       <div class="card-title">🔍 票價查詢</div>
       
       <div class="tabs">
-        <button class="tab-btn active" onclick="switchLeftTab('thsr')">台灣高鐵</button>
-        <button class="tab-btn" onclick="switchLeftTab('tra')">台灣鐵路</button>
-        <button class="tab-btn" onclick="switchLeftTab('flight')">國內航空</button>
+        <button class="tab-btn active" id="tab-thsr" onclick="switchLeftTab('thsr')">台灣高鐵</button>
+        <button class="tab-btn" id="tab-tra" onclick="switchLeftTab('tra')">台灣鐵路</button>
+        <button class="tab-btn" id="tab-flight" onclick="switchLeftTab('flight')">國內航空</button>
       </div>
 
       <!-- 起訖站選擇 -->
@@ -133,12 +149,12 @@ function getThsrFares(i, j) {
   if (std === 0) return [];
   const free = (std <= 40) ? 35 : Math.round((std * 0.97) / 5) * 5;
   const list = [
-    { type: "標準車廂(對號)", price: std },
-    { type: "自由座", price: free },
-    { type: "半價優待", price: Math.floor(std / 2) }
+    { type: "標準車廂(對號)", price: std, isLimit: true },
+    { type: "自由座", price: free, isLimit: false },
+    { type: "半價優待", price: Math.floor(std / 2), isLimit: false }
   ];
   if (!((i === 0 && j <= 2) || (i === 1 && j <= 2) || (i === 2 && j <= 1))) {
-    list.push({ type: "商務車廂", price: std + Math.round(std * 0.65) });
+    list.push({ type: "商務車廂", price: std + Math.round(std * 0.65), isLimit: false });
   }
   return list;
 }
@@ -160,13 +176,13 @@ function getTraFares(i, j) {
   if ((traStations[i]==="台北" && traStations[j]==="台東") || (traStations[j]==="台北" && traStations[i]==="台東")) tze = 783;
 
   return [
-    { type: "自強號(3000/普悠瑪)", price: tze },
-    { type: "莒光號", price: chu },
-    { type: "區間車", price: local }
+    { type: "自強號(3000/普悠瑪)", price: tze, isLimit: true },
+    { type: "莒光號", price: chu, isLimit: false },
+    { type: "區間車", price: local, isLimit: false }
   ];
 }
 
-/* ================= 3. 航空資料庫 (立榮/華信主要航線) ================= */
+/* ================= 3. 航空資料庫 ================= */
 const flightRoutes = [
   { from: "松山", to: "金門", air: "立榮", go: 2458, back: 2341 },
   { from: "松山", to: "金門", air: "華信", go: 2459, back: 2342 },
@@ -187,7 +203,8 @@ const flightRoutes = [
 function switchLeftTab(tab) {
   currentLeftTab = tab;
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  event.target.classList.add('active');
+  const activeBtn = document.getElementById('tab-' + tab);
+  if (activeBtn) activeBtn.classList.add('active');
   
   const start = document.getElementById("startSelect");
   const end = document.getElementById("endSelect");
@@ -200,14 +217,14 @@ function switchLeftTab(tab) {
       end.add(new Option(s, idx));
     });
     start.value = 8; end.value = 1; // 預設雲林 -> 台北
-    document.getElementById("noticeText").innerText = "註：高鐵半價優待為對號座之半價；南港—台北、台北—板橋等無發售商務座。";
+    document.getElementById("noticeText").innerText = "註：高鐵報支上限以標準車廂對號座全票為準；半價優待為對號座半價。";
   } else if (tab === 'tra') {
     traStations.forEach((s, idx) => {
       start.add(new Option(s, idx));
       end.add(new Option(s, idx));
     });
     start.value = 10; end.value = 1; // 預設斗六 -> 台北
-    document.getElementById("noticeText").innerText = "註：臺鐵票價含新自強(3000)、普悠瑪全票票價，實際金額以臺鐵局最新公告為準。";
+    document.getElementById("noticeText").innerText = "註：臺鐵依自強號全票為報支上限基準，實際金額以乘車日公告為準。";
   } else if (tab === 'flight') {
     const flightAirports = ["松山", "金門", "澎湖", "台東", "花蓮", "台中", "高雄"];
     flightAirports.forEach(a => {
@@ -233,10 +250,13 @@ function renderLeftPrice() {
       return;
     }
     fares.forEach(f => {
+      const roundTrip = f.price * 2;
       container.innerHTML += `
-        <div class="price-box ${f.type.includes('標準') ? 'highlight' : ''}">
+        <div class="price-box ${f.isLimit ? 'highlight' : ''}">
+          ${f.isLimit ? '<span class="badge-limit">報支上限</span>' : ''}
           <div class="tag">${f.type}</div>
-          <div class="val ${f.type.includes('標準') ? 'accent' : ''}">NT$ ${f.price.toLocaleString()}</div>
+          <div class="val ${f.isLimit ? 'accent' : ''}">NT$ ${f.price.toLocaleString()}</div>
+          <div class="round-val">🔁 來回 NT$ ${roundTrip.toLocaleString()}</div>
         </div>
       `;
     });
@@ -249,10 +269,13 @@ function renderLeftPrice() {
       return;
     }
     fares.forEach(f => {
+      const roundTrip = f.price * 2;
       container.innerHTML += `
-        <div class="price-box ${f.type.includes('自強') ? 'highlight' : ''}">
+        <div class="price-box ${f.isLimit ? 'highlight' : ''}">
+          ${f.isLimit ? '<span class="badge-limit">報支上限</span>' : ''}
           <div class="tag">${f.type}</div>
-          <div class="val ${f.type.includes('自強') ? 'accent' : ''}">NT$ ${f.price.toLocaleString()}</div>
+          <div class="val ${f.isLimit ? 'accent' : ''}">NT$ ${f.price.toLocaleString()}</div>
+          <div class="round-val">🔁 來回 NT$ ${roundTrip.toLocaleString()}</div>
         </div>
       `;
     });
@@ -266,10 +289,13 @@ function renderLeftPrice() {
     }
     match.forEach(r => {
       const price = (r.from === s) ? r.go : r.back;
+      const roundTrip = r.go + r.back; // 精準計算去程+回程免稅
       container.innerHTML += `
         <div class="price-box highlight">
+          <span class="badge-limit">報支上限</span>
           <div class="tag">${r.air}航空 (${s} ➔ ${e})</div>
           <div class="val accent">NT$ ${price.toLocaleString()}</div>
+          <div class="round-val">🔁 同航空來回 NT$ ${roundTrip.toLocaleString()}</div>
         </div>
       `;
     });
@@ -376,8 +402,9 @@ function runReverseMatch() {
   });
 }
 
-// 預設載入高鐵
-window.onload = () => switchLeftTab('thsr');
+window.addEventListener('DOMContentLoaded', () => {
+  switchLeftTab('thsr');
+});
 </script>
 </body>
 </html>
