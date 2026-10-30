@@ -2,9 +2,7 @@ name: 每日票價自動檢核與比對更新
 
 on:
   schedule:
-    # 每天平日中午 12:30 (台北時間 UTC+8，對應 UTC 04:30)
     - cron: '30 4 * * 1-5'
-  # 允許在 GitHub 網頁手動隨時點擊測試
   workflow_dispatch:
 
 permissions:
@@ -13,7 +11,6 @@ permissions:
 jobs:
   check-and-update:
     runs-on: ubuntu-latest
-
     steps:
       - name: 簽出專案原始碼
         uses: actions/checkout@v4
@@ -23,7 +20,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: 安裝相依套件 (Requests / BeautifulSoup4)
+      - name: 安裝相依套件
         run: |
           pip install requests beautifulsoup4
 
@@ -31,14 +28,9 @@ jobs:
         run: |
           python scripts/update_fares.py
 
-      - name: 若有異動則自動 Commit 並推送到主分支
+      - name: 提交更新
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add index.html
-          if git diff --staged --quiet; then
-            echo "無票價異動，略過 Commit。"
-          else
-            git commit -m "chore(auto-update): 系統排程自動更新最新交通票價數據 [skip ci]"
-            git push origin main
-          fi
+          git diff --quiet && git diff --staged --quiet || (git commit -m "chore(auto-update): 系統排程自動更新最新交通票價數據 [skip ci]" && git push origin main)
