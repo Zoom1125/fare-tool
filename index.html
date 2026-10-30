@@ -37,7 +37,7 @@
     .price-box .tag { font-size: 12px; color: var(--text-sub); margin-bottom: 4px; }
     .price-box .val { font-size: 20px; font-weight: 800; color: var(--primary); }
     .price-box .val.accent { color: var(--accent); }
-    .result-list { margin-top: 16px; max-height: 380px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+    .result-list { margin-top: 16px; max-height: 420px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
     .match-item { border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; font-size: 14px; background: white; border-left: 4px solid var(--primary); }
     .match-tag { font-size: 11px; font-weight: 700; color: var(--accent); margin-bottom: 2px; }
     .desc-note { font-size: 12px; color: var(--text-sub); margin-top: 8px; line-height: 1.5; }
@@ -48,7 +48,7 @@
 <div class="container">
   <header>
     <h1>票價查詢核對工具</h1>
-    <p>左側依交通工具查詢官方票價；右側輸入核銷金額反查單程、來回與共用轉折站組合</p>
+    <p>左側依交通工具查詢官方票價；右側輸入核銷金額反查單程、來回（含自由座/對號座混搭）與轉折站組合</p>
   </header>
 
   <div class="main-grid">
@@ -103,7 +103,7 @@
       </div>
       <div class="form-group">
         <label>輸入核銷金額 (NT$)</label>
-        <input type="number" id="inputAmount" placeholder="例如：1580、2670" />
+        <input type="number" id="inputAmount" placeholder="例如：1800、2670" />
       </div>
       <button class="btn-action" onclick="reverseMatch()">開始反查</button>
 
@@ -115,26 +115,51 @@
 </div>
 
 <script>
-// 高鐵標準 12 站清單
 const stations = ["南港", "台北", "板橋", "桃園", "新竹", "苗栗", "台中", "彰化", "雲林", "嘉義", "台南", "左營"];
 
-// 台北出發到各站的標準對號座全票基準里程/票價表 (依序為 0:南港, 1:台北, 2:板橋 ... 11:左營)
-const fareTable = [
-  [0, 40, 70, 200, 330, 480, 750, 870, 970, 1120, 1390, 1530], // 南港
-  [40, 0, 40, 160, 290, 430, 700, 820, 930, 1080, 1350, 1490], // 台北
-  [70, 40, 0, 130, 260, 400, 670, 790, 900, 1050, 1320, 1460], // 板橋
-  [200, 160, 130, 0, 130, 280, 540, 670, 780, 920, 1190, 1330], // 桃園
-  [330, 290, 260, 130, 0, 140, 410, 540, 640, 790, 1060, 1200], // 新竹
-  [480, 430, 400, 280, 140, 0, 270, 390, 500, 640, 920, 1060],  // 苗栗
-  [750, 700, 670, 540, 410, 270, 0, 130, 230, 380, 650, 790],   // 台中
-  [870, 820, 790, 670, 540, 390, 130, 0, 110, 250, 530, 670],   // 彰化
-  [970, 930, 900, 780, 640, 500, 230, 110, 0, 150, 420, 560],   // 雲林
-  [1120, 1080, 1050, 920, 790, 640, 380, 250, 150, 0, 280, 410],// 嘉義
-  [1390, 1350, 1320, 1190, 1060, 920, 650, 530, 420, 280, 0, 140],// 台南
-  [1530, 1490, 1460, 1330, 1200, 1060, 790, 670, 560, 410, 140, 0]// 左營
+// 標準對號座票價矩陣
+const stdTable = [
+  [0, 40, 70, 200, 330, 480, 750, 870, 970, 1120, 1390, 1530],
+  [40, 0, 40, 160, 290, 430, 700, 820, 930, 1080, 1350, 1490],
+  [70, 40, 0, 130, 260, 400, 670, 790, 900, 1050, 1320, 1460],
+  [200, 160, 130, 0, 130, 280, 540, 670, 780, 920, 1190, 1330],
+  [330, 290, 260, 130, 0, 140, 410, 540, 640, 790, 1060, 1200],
+  [480, 430, 400, 280, 140, 0, 270, 390, 500, 640, 920, 1060],
+  [750, 700, 670, 540, 410, 270, 0, 130, 230, 380, 650, 790],
+  [870, 820, 790, 670, 540, 390, 130, 0, 110, 250, 530, 670],
+  [970, 930, 900, 780, 640, 500, 230, 110, 0, 150, 420, 560],
+  [1120, 1080, 1050, 920, 790, 640, 380, 250, 150, 0, 280, 410],
+  [1390, 1350, 1320, 1190, 1060, 920, 650, 530, 420, 280, 0, 140],
+  [1530, 1490, 1460, 1330, 1200, 1060, 790, 670, 560, 410, 140, 0]
 ];
 
-// 初始化站點下拉選單
+// 自由座計算規則（官方約 97 折並捨入至 5 元）
+function getFreeFare(std) {
+  if (std === 0) return 0;
+  if (std <= 40) return 35;
+  return Math.round((std * 0.97) / 5) * 5;
+}
+
+// 商務座計算
+function getBizFare(s, e, std) {
+  if (std === 0) return 0;
+  if ((s === 0 && e <= 2) || (s === 1 && e <= 2) || (s === 2 && e <= 1)) return 0; // 不發售
+  return std + Math.round(std * 0.65);
+}
+
+// 取得兩站間所有可用席位與票價
+function getFaresBetween(s, e) {
+  const std = stdTable[s][e];
+  if (std === 0) return [];
+  const list = [
+    { type: "對號座", price: std },
+    { type: "自由座", price: getFreeFare(std) }
+  ];
+  const biz = getBizFare(s, e, std);
+  if (biz > 0) list.push({ type: "商務座", price: biz });
+  return list;
+}
+
 function init() {
   const start = document.getElementById("startStation");
   const end = document.getElementById("endStation");
@@ -142,16 +167,15 @@ function init() {
     start.add(new Option(s, idx));
     end.add(new Option(s, idx));
   });
-  start.value = 1; // 預設台北
-  end.value = 10;  // 預設台南
+  start.value = 8; // 預設雲林
+  end.value = 1;  // 預設台北
   calcFare();
 }
 
-// 正向查詢計算
 function calcFare() {
   const s = parseInt(document.getElementById("startStation").value);
   const e = parseInt(document.getElementById("endStation").value);
-  const std = fareTable[s][e];
+  const std = stdTable[s][e];
   
   if (std === 0) {
     document.getElementById("seatStandard").innerText = "NT$ 0";
@@ -161,23 +185,17 @@ function calcFare() {
     return;
   }
 
-  // 自由座概算（約97折，以5元取整）
-  const free = Math.round((std * 0.97) / 5) * 5;
-  // 半價
+  const free = getFreeFare(std);
   const half = Math.floor(std / 2);
-  // 商務座（近程不發售則標示）
-  let biz = "不發售";
-  if (!((s === 0 && e <= 2) || (s === 1 && e <= 2) || (s === 2 && e <= 1))) {
-    biz = "NT$ " + (std + Math.round(std * 0.65)).toLocaleString();
-  }
+  const biz = getBizFare(s, e, std);
 
   document.getElementById("seatStandard").innerText = "NT$ " + std.toLocaleString();
   document.getElementById("seatFree").innerText = "NT$ " + free.toLocaleString();
-  document.getElementById("seatBusiness").innerText = biz;
+  document.getElementById("seatBusiness").innerText = biz > 0 ? "NT$ " + biz.toLocaleString() : "不發售";
   document.getElementById("seatHalf").innerText = "NT$ " + half.toLocaleString();
 }
 
-// 核心：反查配對演算法 (包含單程、來回、以及共用轉折站的多段組合)
+// 核心反查：全面納入對號座、自由座及混搭
 function reverseMatch() {
   const target = parseInt(document.getElementById("inputAmount").value);
   const resultsDiv = document.getElementById("matchResults");
@@ -190,58 +208,74 @@ function reverseMatch() {
 
   let matches = [];
 
-  // 1. 單程比對
+  // 1. 單程比對（所有席位）
   for (let i = 0; i < stations.length; i++) {
     for (let j = 0; j < stations.length; j++) {
       if (i === j) continue;
-      const fare = fareTable[i][j];
-      if (fare === target) {
-        matches.push({
-          type: "單程相符",
-          text: `${stations[i]} ➔ ${stations[j]} (標準對號座全票)`,
-          amount: fare
-        });
-      }
+      const fares = getFaresBetween(i, j);
+      fares.forEach(f => {
+        if (f.price === target) {
+          matches.push({
+            type: "單程相符",
+            text: `${stations[i]} ➔ ${stations[j]} (${f.type})`,
+            amount: f.price
+          });
+        }
+      });
     }
   }
 
-  // 2. 同站來回比對
+  // 2. 來回比對（同站往返，支援自由座與對號座混搭）
   for (let i = 0; i < stations.length; i++) {
     for (let j = i + 1; j < stations.length; j++) {
-      const fare = fareTable[i][j] * 2;
-      if (fare === target) {
-        matches.push({
-          type: "同站來回相符",
-          text: `去程：${stations[i]} ➔ ${stations[j]} ＋ 回程：${stations[j]} ➔ ${stations[i]}`,
-          amount: fare
+      const outFares = getFaresBetween(i, j);
+      const inFares = getFaresBetween(j, i);
+
+      outFares.forEach(f1 => {
+        inFares.forEach(f2 => {
+          if (f1.price + f2.price === target) {
+            const seatDesc = (f1.type === f2.type) ? `雙程皆為 ${f1.type}` : `去程 ${f1.type}(${f1.price}元) + 回程 ${f2.type}(${f2.price}元)`;
+            matches.push({
+              type: "同站來回相符",
+              text: `${stations[i]} ⇄ ${stations[j]}（${seatDesc}）`,
+              amount: target
+            });
+          }
         });
-      }
+      });
     }
   }
 
-  // 3. 多段不同站（共用一個轉折站點，例如：去程 A->B，回程 B->C）
+  // 3. 共用轉折站比對（去程 A->B，回程 B->C，支援各席位組合）
   for (let b = 0; b < stations.length; b++) { // B 為轉折點
     for (let a = 0; a < stations.length; a++) {
       if (a === b) continue;
       for (let c = 0; c < stations.length; c++) {
-        if (c === b || c === a) continue; // 避免與同站來回重複
-        const cost = fareTable[a][b] + fareTable[b][c];
-        if (cost === target) {
-          matches.push({
-            type: "共用轉折站組合",
-            text: `去程：${stations[a]} ➔ ${stations[b]} (${fareTable[a][b]}元) ＋ 回程：${stations[b]} ➔ ${stations[c]} (${fareTable[b][c]}元) [轉折點：${stations[b]}]`,
-            amount: cost
+        if (c === b || c === a) continue; // 排除同站往返
+        const leg1Fares = getFaresBetween(a, b);
+        const leg2Fares = getFaresBetween(b, c);
+
+        leg1Fares.forEach(f1 => {
+          leg2Fares.forEach(f2 => {
+            if (f1.price + f2.price === target) {
+              matches.push({
+                type: "共用轉折站組合",
+                text: `去程：${stations[a]} ➔ ${stations[b]} (${f1.type} ${f1.price}元) ＋ 回程：${stations[b]} ➔ ${stations[c]} (${f2.type} ${f2.price}元) [轉折點：${stations[b]}]`,
+                amount: target
+              });
+            }
           });
-        }
+        });
       }
     }
   }
 
   if (matches.length === 0) {
-    resultsDiv.innerHTML = `<div style="text-align: center; color: var(--text-sub); font-size: 13px; margin-top: 20px;">未找到剛好為 NT$ ${target} 的高鐵組合，請確認是否有加計計程車、公車或部分優待票種。</div>`;
+    resultsDiv.innerHTML = `<div style="text-align: center; color: var(--text-sub); font-size: 13px; margin-top: 20px;">未找到剛好為 NT$ ${target} 的高鐵組合，請確認是否有加計市區交通費或優待票。</div>`;
     return;
   }
 
+  // 顯示結果（避免過多重複項目）
   matches.forEach(m => {
     const item = document.createElement("div");
     item.className = "match-item";
